@@ -1,13 +1,13 @@
-# Environment & secrets
-.env
-*.env
+# ── Environment & secrets ──────────────────────────────
+backend/.env
+backend/*.env
+backend/.env.example
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# ── Database ───────────────────────────────────────────
+backend/*.db
+backend/tabsense.db
 
-# Python
+# ── Python ────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -21,12 +21,12 @@ venv/
 .venv/
 env/
 
-# macOS
+# ── macOS ──────────────────────────────────────────────
 .DS_Store
 
-# IDE
+# ── IDE ───────────────────────────────────────────────
 .vscode/
 .idea/
 
-# Logs
+# ── Logs ──────────────────────────────────────────────
 *.log
