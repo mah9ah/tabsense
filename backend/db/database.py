@@ -1,0 +1,29 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from core.config import settings
+
+engine = create_engine(
+    f"sqlite:///{settings.DB_PATH}",
+    connect_args={"check_same_thread": False},  # Required for SQLite with FastAPI
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+def get_db():
+    """Dependency: yields a DB session and ensures cleanup."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def init_db():
+    """Create all tables on startup."""
+    from db import models  # noqa: F401 — import models so Base knows about them
+    Base.metadata.create_all(bind=engine)
