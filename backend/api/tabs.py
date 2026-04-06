@@ -1,9 +1,10 @@
-import json
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from core.security import limiter, LIMITS
+from core.sanitize import sanitize_text, MAX_SEARCH_LEN
 from db.database import get_db
 from db.models import Tab, Event, EventType, TabStatus
 from schemas.tab import TabCreate, TabUpdate, TabResponse, EventResponse
@@ -12,11 +13,12 @@ router = APIRouter(prefix="/tabs", tags=["Tabs"])
 
 
 @router.post("/", response_model=TabResponse, status_code=201)
-def create_tab(payload: TabCreate, db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["write"])
+def create_tab(request: Request, payload: TabCreate, db: Session = Depends(get_db)):
     """Register a newly opened tab or app."""
     tab = Tab(**payload.model_dump())
     db.add(tab)
-    db.flush()  # Get the ID before committing
+    db.flush()
 
     event = Event(tab_id=tab.id, type=EventType.opened)
     db.add(event)
@@ -26,9 +28,11 @@ def create_tab(payload: TabCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[TabResponse])
+@limiter.limit(LIMITS["default"])
 def list_tabs(
+    request: Request,
     status: Optional[TabStatus] = Query(None, description="Filter by status"),
-    search: Optional[str] = Query(None, description="Search by title, URL, or AI summary"),
+    search: Optional[str] = Query(None, max_length=200, description="Search by title, URL, or AI summary"),
     db: Session = Depends(get_db),
 ):
     """List all tabs, with optional status filter and full-text search."""
@@ -38,6 +42,8 @@ def list_tabs(
         query = query.filter(Tab.status == status)
 
     if search:
+        # Sanitize the search term before using in LIKE query
+        search = sanitize_text(search, MAX_SEARCH_LEN, "search") or ""
         term = f"%{search}%"
         query = query.filter(
             Tab.title.ilike(term)
@@ -51,7 +57,8 @@ def list_tabs(
 
 
 @router.get("/{tab_id}", response_model=TabResponse)
-def get_tab(tab_id: int, db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["default"])
+def get_tab(request: Request, tab_id: int, db: Session = Depends(get_db)):
     tab = db.query(Tab).filter(Tab.id == tab_id).first()
     if not tab:
         raise HTTPException(status_code=404, detail="Tab not found")
@@ -59,7 +66,8 @@ def get_tab(tab_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{tab_id}", response_model=TabResponse)
-def update_tab(tab_id: int, payload: TabUpdate, db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["write"])
+def update_tab(request: Request, tab_id: int, payload: TabUpdate, db: Session = Depends(get_db)):
     """Update tab metadata, settings, or activity timestamp."""
     tab = db.query(Tab).filter(Tab.id == tab_id).first()
     if not tab:
@@ -67,7 +75,6 @@ def update_tab(tab_id: int, payload: TabUpdate, db: Session = Depends(get_db)):
 
     update_data = payload.model_dump(exclude_unset=True)
 
-    # Record activation event if last_active_at is being updated
     if "last_active_at" in update_data:
         db.add(Event(tab_id=tab.id, type=EventType.activated))
         if tab.status == TabStatus.inactive:
@@ -82,7 +89,9 @@ def update_tab(tab_id: int, payload: TabUpdate, db: Session = Depends(get_db)):
 
 
 @router.post("/{tab_id}/close", response_model=TabResponse)
+@limiter.limit(LIMITS["write"])
 def close_tab(
+    request: Request,
     tab_id: int,
     auto: bool = Query(False, description="True if closed by auto-close logic"),
     db: Session = Depends(get_db),
@@ -104,7 +113,8 @@ def close_tab(
 
 
 @router.delete("/{tab_id}", status_code=204)
-def delete_tab(tab_id: int, db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["write"])
+def delete_tab(request: Request, tab_id: int, db: Session = Depends(get_db)):
     """Permanently remove a tab and its events from the database."""
     tab = db.query(Tab).filter(Tab.id == tab_id).first()
     if not tab:
@@ -114,7 +124,8 @@ def delete_tab(tab_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{tab_id}/events", response_model=list[EventResponse])
-def get_tab_events(tab_id: int, db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["default"])
+def get_tab_events(request: Request, tab_id: int, db: Session = Depends(get_db)):
     """Get full event history for a tab."""
     tab = db.query(Tab).filter(Tab.id == tab_id).first()
     if not tab:

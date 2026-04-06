@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
 
+    # Auth — CHANGE THIS in .env before deploying
+    SECRET_KEY: str = "changeme-use-a-long-random-string-in-dotenv"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
     # Inactivity defaults (in seconds)
     DEFAULT_INACTIVITY_THRESHOLD: int = 1800  # 30 minutes
 

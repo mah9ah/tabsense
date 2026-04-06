@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from core.security import limiter, LIMITS
 from db.database import get_db
 from db.models import Tab, TabStatus
 from schemas.tab import InactiveTabResponse, TabResponse
@@ -12,7 +13,8 @@ router = APIRouter(prefix="/inactivity", tags=["Inactivity"])
 
 
 @router.get("/check", response_model=list[InactiveTabResponse])
-def check_inactive_tabs(db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["inactivity"])
+def check_inactive_tabs(request: Request, db: Session = Depends(get_db)):
     """
     Scan all active tabs and return those that have exceeded their inactivity threshold.
     Does NOT auto-close — that is triggered separately via /inactivity/process.
@@ -39,7 +41,8 @@ def check_inactive_tabs(db: Session = Depends(get_db)):
 
 
 @router.post("/process", response_model=list[TabResponse])
-def process_inactive_tabs(db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["inactivity"])
+def process_inactive_tabs(request: Request, db: Session = Depends(get_db)):
     """
     For each inactive tab:
     - Mark it as inactive and record a reminder notification event.

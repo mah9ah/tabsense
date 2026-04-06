@@ -1,7 +1,11 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from db.models import TabType, TabStatus, EventType
+from core.sanitize import (
+    sanitize_text, sanitize_url,
+    MAX_TITLE_LEN, MAX_URL_LEN, MAX_APP_LEN, MAX_DETAILS_LEN, MAX_SEARCH_LEN,
+)
 
 
 # ── Tab Schemas ────────────────────────────────────────────────────────────────
@@ -15,10 +19,43 @@ class TabCreate(BaseModel):
     inactivity_threshold: Optional[int] = None  # seconds
     auto_close_enabled: bool = False
 
-    @field_validator("url", "favicon_url", mode="before")
+    @field_validator("title")
     @classmethod
-    def empty_str_to_none(cls, v):
-        return v or None
+    def validate_title(cls, v):
+        result = sanitize_text(v, MAX_TITLE_LEN, "title")
+        if not result:
+            raise ValueError("title cannot be empty.")
+        return result
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v):
+        return sanitize_url(v)
+
+    @field_validator("favicon_url")
+    @classmethod
+    def validate_favicon_url(cls, v):
+        return sanitize_url(v)
+
+    @field_validator("app_name")
+    @classmethod
+    def validate_app_name(cls, v):
+        return sanitize_text(v, MAX_APP_LEN, "app_name")
+
+    @field_validator("inactivity_threshold")
+    @classmethod
+    def validate_threshold(cls, v):
+        if v is not None and (v < 30 or v > 86400):
+            raise ValueError("inactivity_threshold must be between 30 and 86400 seconds.")
+        return v
+
+    @model_validator(mode="after")
+    def check_url_or_app(self):
+        if self.type == TabType.browser_tab and not self.url:
+            raise ValueError("browser_tab requires a url.")
+        if self.type == TabType.desktop_app and not self.app_name:
+            raise ValueError("desktop_app requires an app_name.")
+        return self
 
 
 class TabUpdate(BaseModel):
@@ -29,6 +66,28 @@ class TabUpdate(BaseModel):
     auto_close_enabled: Optional[bool] = None
     ai_summary: Optional[str] = None
     ai_category: Optional[str] = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v):
+        return sanitize_text(v, MAX_TITLE_LEN, "title")
+
+    @field_validator("ai_summary")
+    @classmethod
+    def validate_summary(cls, v):
+        return sanitize_text(v, 1000, "ai_summary")
+
+    @field_validator("ai_category")
+    @classmethod
+    def validate_category(cls, v):
+        return sanitize_text(v, 128, "ai_category")
+
+    @field_validator("inactivity_threshold")
+    @classmethod
+    def validate_threshold(cls, v):
+        if v is not None and (v < 30 or v > 86400):
+            raise ValueError("inactivity_threshold must be between 30 and 86400 seconds.")
+        return v
 
 
 class TabResponse(BaseModel):
@@ -56,7 +115,12 @@ class TabResponse(BaseModel):
 class EventCreate(BaseModel):
     tab_id: int
     type: EventType
-    details: Optional[str] = None  # JSON string
+    details: Optional[str] = None
+
+    @field_validator("details")
+    @classmethod
+    def validate_details(cls, v):
+        return sanitize_text(v, MAX_DETAILS_LEN, "details")
 
 
 class EventResponse(BaseModel):
@@ -77,6 +141,13 @@ class UserSettingsUpdate(BaseModel):
     auto_close_enabled_globally: Optional[bool] = None
     notifications_enabled: Optional[bool] = None
     ai_summaries_enabled: Optional[bool] = None
+
+    @field_validator("default_inactivity_threshold")
+    @classmethod
+    def validate_threshold(cls, v):
+        if v is not None and (v < 30 or v > 86400):
+            raise ValueError("Threshold must be between 30 and 86400 seconds.")
+        return v
 
 
 class UserSettingsResponse(BaseModel):
@@ -109,3 +180,17 @@ class SummaryResponse(BaseModel):
     tab_id: int
     summary: str
     category: Optional[str]
+
+
+# ── Search Schema ──────────────────────────────────────────────────────────────
+
+class SearchQuery(BaseModel):
+    q: str
+
+    @field_validator("q")
+    @classmethod
+    def validate_query(cls, v):
+        result = sanitize_text(v, MAX_SEARCH_LEN, "search query")
+        if not result:
+            raise ValueError("Search query cannot be empty.")
+        return result

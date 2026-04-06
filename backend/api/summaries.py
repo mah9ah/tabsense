@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from core.security import limiter, LIMITS
 from db.database import get_db
 from db.models import Tab, Event, EventType
 from schemas.tab import SummaryRequest, SummaryResponse
@@ -10,7 +11,8 @@ router = APIRouter(prefix="/summaries", tags=["AI Summaries"])
 
 
 @router.post("/", response_model=SummaryResponse)
-def generate_summary(payload: SummaryRequest, db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["ai"])
+def generate_summary(request: Request, payload: SummaryRequest, db: Session = Depends(get_db)):
     """
     Generate (or regenerate) an AI summary for a tab.
     Stores the result back on the Tab record.
@@ -44,7 +46,8 @@ def generate_summary(payload: SummaryRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/batch", response_model=list[SummaryResponse])
-def generate_summaries_for_all(db: Session = Depends(get_db)):
+@limiter.limit(LIMITS["sensitive"])
+def generate_summaries_for_all(request: Request, db: Session = Depends(get_db)):
     """
     Generate AI summaries for all tabs that don't have one yet.
     Useful on first launch or after re-enabling AI summaries.
